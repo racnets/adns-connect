@@ -148,7 +148,7 @@ int main(int argc, char *argv[])
 	FILE* lfd = NULL;
 	double t, t0;
 
-	printf("\nADNS testing tool\n");
+	printf("\nADNS connect tool\n");
 	
 	if (argc < 2) {
 		print_usage(argv[0]);
@@ -198,7 +198,7 @@ int main(int argc, char *argv[])
 			i2cInit(i2c_dev, I2C_SLAVE_ADDRESS);
 		}
 		fprintf(lfd, "\n");
-	}
+	} else lfd = stdout;
 
 	// socket server functionality 
 	if (socket) {
@@ -267,37 +267,37 @@ int main(int argc, char *argv[])
 	ADNS_get_FPS_bounds(fd);
 	t0 = getTime();
 
-	if (run) {
-		while(1) {
-			t = getTime();
-			ADNS_read_motion_burst(fd);
-			printf("%f\t%u\t%u\t%d\t%d\t\t%d\n", t - t0, adns.motion.MOT, adns.squal, adns.delta_X, adns.delta_Y, adns.shutter);		
-			usleep(100000);			
-		}
-	}
+//	if (run) {
+//		while(1) {
+//			t = getTime();
+//			ADNS_read_motion_burst(fd);
+//			printf("%f\t%u\t%u\t%d\t%d\t\t%d\n", t - t0, adns.motion.MOT, adns.squal, adns.delta_X, adns.delta_Y, adns.shutter);		
+//		}
+//	}
 	
 	do {
 		t = getTime();
 		ADNS_read_motion_burst(fd);
-		if (lfd != NULL) {
+		
+		fprintf(lfd, "%f\t%u\t%d\t%d", t - t0, adns.motion.MOT, adns.delta_X, adns.delta_Y);	
+		fprintf(lfd, "\t%d\t%d\t%d\t%d", adns.squal, adns.shutter, adns.pixel_sum, adns.motion.OVF);
+		fprintf(lfd, "\t%d\t0x%x", adns.motion.RES, adns.product_ID + adns.inv_product_ID);
+		
+		if (i2c_log) {
 			uint16_t servo_value = i2cReadW(0x32);
 			uint16_t brightness_value[4];
 			brightness_value[0] = i2cReadW(0x76);
 			brightness_value[1] = i2cReadW(0x78);
 			brightness_value[2] = i2cReadW(0x72);
 			brightness_value[3] = i2cReadW(0x74);
-
-			fprintf(lfd, "%f\t%u\t%d\t%d", t - t0, adns.motion.MOT, adns.delta_X, adns.delta_Y);		
-			fprintf(lfd, "\t%d\t%d\t%d\t%d", adns.squal, adns.shutter, adns.pixel_sum, adns.motion.OVF);		
-			fprintf(lfd, "\t%d\t0x%x", adns.motion.RES, adns.product_ID + adns.inv_product_ID);
-			if (i2c_log) {
-				fprintf(lfd, "\t%u", servo_value);
-				fprintf(lfd, "\t%u\t%u\t%u\t%u", brightness_value[0], brightness_value[1], brightness_value[2], brightness_value[3]);
-			}
-			fprintf(lfd, "\n");
+			fprintf(lfd, "\t%u", servo_value);
+			fprintf(lfd, "\t%u\t%u\t%u\t%u", brightness_value[0], brightness_value[1], brightness_value[2], brightness_value[3]);
 		}
-		usleep(adns.frame_period / 24);
-	} while ((t - t0) < time);
+		fprintf(lfd, "\n");
+
+		usleep(100000);			
+//		usleep(adns.frame_period / 24);
+	} while (((t - t0) < time) || run);
 	
 	if (lfd != NULL) fclose(lfd);
 	close(fd);

@@ -76,14 +76,14 @@ int SPI_read_byte(int fd, uint8_t addr, uint8_t *value) {
 }
 
 int SPI_write_byte(int fd, uint8_t addr, uint8_t value) {
-	int n = 2;
+	// write
 	struct spi_ioc_transfer tr[1] = {{0},};
     
    	uint8_t tx[2] = {addr, value};
 
 	tr[0].tx_buf = (unsigned long)tx;
 	tr[0].rx_buf = (unsigned long)NULL;
-	tr[0].len = n;
+	tr[0].len = 2;
 	tr[0].delay_usecs = delay;
 	tr[0].speed_hz = speed;
 	tr[0].bits_per_word = bits;
@@ -126,7 +126,7 @@ int ADNS_read_motion_burst(int fd) {
 	adns.motion_val		= rx[0];
 	adns.delta_X    	= (int8_t)rx[1];
 	adns.delta_Y    	= (int8_t)rx[2];
-	adns.squal			= 4*rx[3];
+	adns.squal		= 4*rx[3];
 	adns.shutter		= (rx[4] << 8) | rx[5];
 	adns.maximum_pixel	= rx[6];
 
@@ -306,9 +306,9 @@ int ADNS_set_FPS_bounds(int fd, int shutter) {
         
 	if (verbose) printf("set frame period bounds for max shutter of %d\n", shutter);
 
-	adns.shutter_max		= shutter;
-	adns.frame_period_min	= 3200;
-	adns.frame_period_max	= 3200 + shutter;
+	adns.shutter_max	= shutter;
+	adns.frame_period_min	= 0x0e7e;
+	adns.frame_period_max	= adns.frame_period_min	+ shutter;
 
 	uint8_t fpmaxbl	= adns.frame_period_max;
 	uint8_t fpmaxbu	= adns.frame_period_max >> 8;
@@ -317,37 +317,66 @@ int ADNS_set_FPS_bounds(int fd, int shutter) {
 	uint8_t smaxbl 	= adns.shutter_max;
 	uint8_t smaxbu 	= adns.shutter_max >> 8;
 
-	// wait for sensor to be ready
-	int count = 0;
-	int _verbose = verbose;
-	verbose = 0;
+	int unsuccessful_change_count = 0;
 	do {
-		ADNS_get_ext_conf(fd);
-		count++;
-	} while (adns.ext_config.busy && (count < 1000));
-	verbose = _verbose;
+		// wait for sensor to be ready
+		int busy_count = 0;
+		int _verbose = verbose;
+		verbose = 0;
+		do {
+			ADNS_get_ext_conf(fd);
+			busy_count++;
+//			usleep(100000);
+		} while (adns.ext_config.busy && (busy_count < 1000));
+		verbose = _verbose;
 
-	if (adns.ext_config.busy && (count >= 1000)) {
-		printf("\twarning: sensor bussy!\n");
+		if (adns.ext_config.busy) {
+			printf("\twarning: sensor busy!\n");
+		}
+
+		// disable automatic shutter mode
+		// enable fixed frame rate
+		ADNS_set_ext_conf(fd, 0x03);
+
+		// set frame period min
+		ret = SPI_write_byte(fd, 0x80 | 0x1b, fpminbl);
+		if (ret < 1) return ret;
+		ret = SPI_write_byte(fd, 0x80 | 0x1c, fpminbu);
+		if (ret < 1) return ret;
+
+		// set shutter max
+		ret = SPI_write_byte(fd, 0x80 | 0x1d, smaxbl);
+		if (ret < 1) return ret;
+		ret = SPI_write_byte(fd, 0x80 | 0x1e, smaxbu);
+		if (ret < 1) return ret;
+
+		// set frame period maximum
+		// - needs to be the last of the 3 registers to be written to
+		// - write activates all new values of the 3 registers
+		ret = SPI_write_byte(fd, 0x80 | 0x19, fpmaxbl);
+		if (ret < 1) return ret;
+//		usleep(100000);
+		ret = SPI_write_byte(fd, 0x80 | 0x1a, fpmaxbu);
+		if (ret < 1) return ret;
+
+		// sensor needs some time to implement the new settings
+		usleep(100000);
+
+		// check for new settings to be active
+		ADNS_read_motion_burst(fd);
+	
+		unsuccessful_change_count++;
+
+	} while ((adns.shutter_max != adns.shutter) && (unsuccessful_change_count < 100));
+	printf("needed %d try(s) to implement new setting\n", unsuccessful_change_count);
+
+	// enable automatic shutter mode
+	// disable fixed frame rate
+	ADNS_set_ext_conf(fd, 0x00);
+
+	if (adns.shutter_max != adns.shutter) {
+		printf("\twarning: can't implement new setting!\n");
 	}
-
-	// set frame period maximum
-	ret = SPI_write_byte(fd, 0x80 | 0x19, fpmaxbl);
-	if (ret < 1) return ret;
-	ret = SPI_write_byte(fd, 0x80 | 0x1a, fpmaxbu);
-	if (ret < 1) return ret;
-
-	// set frame period min
-	ret = SPI_write_byte(fd, 0x80 | 0x1b, fpminbl);
-	if (ret < 1) return ret;
-	ret = SPI_write_byte(fd, 0x80 | 0x1c, fpminbu);
-	if (ret < 1) return ret;
-
-	// set shutter max
-	ret = SPI_write_byte(fd, 0x80 | 0x1d, smaxbl);
-	if (ret < 1) return ret;
-	ret = SPI_write_byte(fd, 0x80 | 0x1e, smaxbu);
-	if (ret < 1) return ret;
 
 	return ret;
 }

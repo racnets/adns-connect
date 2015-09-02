@@ -32,9 +32,6 @@ do
 		# setup adns to max shutter period - original
 		./adns-connect -S 9100
 		sleep 0.5
-		./adns-connect -S 9100
-		sleep 0.5
-		./adns-connect -v
 
 		#set servo initial position and speed
 		$(i2cset -y 0 0x18 0x32 0x00 w)
@@ -51,9 +48,6 @@ do
 		# setup adns to max shutter period
 		./adns-connect -S 60000
 		sleep 0.5
-		./adns-connect -S 60000
-		sleep 0.5
-		./adns-connect -v
 
 		#set servo initial position and speed
 		$(i2cset -y 0 0x18 0x32 0x00 w)
